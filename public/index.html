@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><path d='M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8 7V9h2v4h3l-4 4-4-4h3z'/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    <title>Zip Organizer | Dark Mode</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 450px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: var(--primary); }
+        p { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.9rem; }
+
+        /* Стили зоны Drag n Drop */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 0.75rem;
+            padding: 2.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .drop-zone--over {
+            border-color: var(--primary);
+            background-color: rgba(56, 189, 248, 0.05);
+        }
+
+        .drop-zone__input { display: none; }
+
+        .drop-zone__prompt {
+            color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .icon {
+            width: 48px;
+            height: 48px;
+            fill: var(--text-muted);
+        }
+
+        .drop-zone--over .icon { fill: var(--primary); }
+
+        .file-info {
+            margin-top: 1rem;
+            font-size: 0.85rem;
+            color: var(--primary);
+            display: none;
+        }
+
+        button {
+            margin-top: 2rem;
+            width: 100%;
+            background-color: var(--primary);
+            color: #000;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover { background-color: var(--primary-hover); }
+        button:disabled { background-color: var(--border); cursor: not-allowed; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Zip Organizer</h1>
+    <p>Перетащите архив, и я разложу файлы по папкам</p>
+
+    <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-zone__prompt">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                <span>Кликните или перетащите .zip файл</span>
+            </div>
+            <input type="file" name="archive" class="drop-zone__input" id="fileInput" accept=".zip">
+            <div id="fileInfo" class="file-info"></div>
+        </div>
+        <button type="submit" id="submitBtn" disabled>Сортировать и скачать</button>
+    </form>
+</div>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Клик по зоне открывает выбор файла
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // Изменение файла
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) {
+            updateThumbnail(fileInput.files[0]);
+        }
+    });
+
+    // Drag n Drop события
+    ['dragover', 'dragleave', 'drop'].forEach(type => {
+        dropZone.addEventListener(type, (e) => {
+            e.preventDefault();
+            if (type === 'dragover') dropZone.classList.add('drop-zone--over');
+            else dropZone.classList.remove('drop-zone--over');
+        });
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            updateThumbnail(e.dataTransfer.files[0]);
+        }
+    });
+
+    function updateThumbnail(file) {
+        if (file.type === "application/zip" || file.name.endsWith('.zip')) {
+            fileInfo.style.display = 'block';
+            fileInfo.textContent = `Выбран файл: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+            submitBtn.disabled = false;
+        } else {
+            alert("Пожалуйста, выберите ZIP архив");
+            submitBtn.disabled = true;
+        }
+    }
+</script>
+
+</body>
+</html>

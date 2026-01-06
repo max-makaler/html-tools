@@ -1,69 +1,51 @@
 import AdmZip from 'adm-zip';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { processHtml, processCss } from './editFiles.js'
+import { processHtml, processCss } from './editFiles.js';
 
-// Настройка путей для ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
-// Формируем путь к архиву
-const inputZipPath = path.join(__dirname, 'test.zip');
-const outputZipPath = path.join(__dirname, 'result.zip');
-
+// 2. Добавил видео в список
 function getTargetFolder(ext) {
     if (ext === '.css') return 'css/';
     if (['.jpg', '.jpeg', '.png', '.svg', '.webp', '.gif'].includes(ext)) return 'img/';
     if (['.js'].includes(ext)) return 'js/';
-    if (['.woff', '.woff2', '.ttf'].includes(ext)) return 'fonts/';
+    if (['.woff', '.woff2', '.ttf', '.eot', '.otf'].includes(ext)) return 'fonts/';
+    if (['.mp4', '.webm', '.ogg'].includes(ext)) return 'video/'; // Добавил видео
     return '';
 }
 
-function startSorting() {
+export function sorting(zipBuffer) {
     try {
-        const oldZip = new AdmZip(inputZipPath);
+        const oldZip = new AdmZip(zipBuffer);
         const newZip = new AdmZip();
         const oldFiles = oldZip.getEntries();
 
         oldFiles.forEach(entry => {
             if (entry.isDirectory) return;
 
-            const fileName = entry.entryName;
-            const ext = path.extname(fileName).toLowerCase();  // это расширение файла (.css/.jpg/.js)
+            // Берем только имя файла (без старых папок, если они были)
+            const fileName = path.basename(entry.entryName);
+            const ext = path.extname(fileName).toLowerCase();
             const folder = getTargetFolder(ext);
             let content = entry.getData();
 
-            // Если это HTML файл — правим в нем пути
+            // Магия трансформации текста
             if (ext === '.html') {
-                const updatedHtml = processHtml(content.toString()); // Конвертируем байты в строку и правим
-                content = Buffer.from(updatedHtml); // Конвертируем строку обратно в байты (буфер)
-            }
+                content = Buffer.from(processHtml(content.toString()));
+            } 
             else if (ext === '.css') {
-                const updatedCss = processCss(content.toString());
-                content = Buffer.from(updatedCss); 
-                newZip.addFile(`css/${fileName}`, content);
-            } 
-            else if (['.jpg', '.jpeg', '.png', '.svg', '.webp', '.gif'].includes(ext)) {
-                newZip.addFile(`img/${fileName}`, entry.getData());
-            } 
-            else if (['.woff', '.woff2', '.ttf', '.eot', '.otf'].includes(ext)) {
-                newZip.addFile(`fonts/${fileName}`, entry.getData());
-            } 
-            else if (['.mp4', '.webm', '.ogg'].includes(ext)) {
-                newZip.addFile(`video/${fileName}`, entry.getData());
-            } 
-            else if (ext === '.js') {
-                newZip.addFile(`js/${fileName}`, entry.getData());
+                content = Buffer.from(processCss(content.toString()));
             }
-
+            // folder будет либо 'css/', 'img/', и т.д., либо '' для index.html
             newZip.addFile(folder + fileName, content);
         });
+        
+        console.log('🚀 Обработка завершена успешно');
+        
+        // ВАЖНО: возвращаем Buffer, чтобы server.js мог его отправить
+        return newZip.toBuffer(); 
 
-        newZip.writeZip(outputZipPath);
-        console.log('🚀 Готово! Пути в HTML обновлены.');
     } catch (e) {
-        console.error("Ошибка:", e.message);
+        console.error("Ошибка в функции sorting:", e.message);
+        throw e; // Пробрасываем ошибку дальше, чтобы сервер знал о ней
     }
 }
-
-startSorting();
