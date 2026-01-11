@@ -129,21 +129,29 @@ fastify.register(async function (instance) {
 
     // 2. Раздача данных для скрипта внутри VPN
     instance.get('/pending', async (request, reply) => {
-        // Проверяем тот же токен (безопасность лишней не бывает)
-        const token = request.query.token;
+        const { token } = request.query;
+
         if (!token || token !== process.env.JIRA_BRIDGE_TOKEN) {
             return reply.code(401).send({ error: 'Unauthorized' });
         }
 
-        // Берем все новые задачи
-        const tasks = db.prepare("SELECT id, issue_key, comment FROM jira_queue WHERE status = 'new'").all();
+        const getAndUpdate = db.transaction(() => {
+            // 1. Берем новые задачи
+            const rows = db.prepare("SELECT id, issue_key, comment FROM jira_queue WHERE status = 'new'").all();
+            
+            if (rows.length > 0) {
+                const ids = rows.map(r => r.id).join(',');
+                // 2. Помечаем их как отправленные
+                db.prepare(`UPDATE jira_queue SET status = 'sent' WHERE id IN (${ids})`).run();
+            }
 
-        if (tasks.length > 0) {
-            // Помечаем их как отправленные
-            const ids = tasks.map(t => t.id).join(',');
-            db.prepare(`UPDATE jira_queue SET status = 'sent' WHERE id IN (${ids})`).run();
-        }
+            // 3. АВТО-ОЧИСТКА: Удаляем всё, что было отправлено более 30 дней назад
+            db.prepare("DELETE FROM jira_queue WHERE status = 'sent' AND created_at < datetime('now', '-30 days')").run();
 
+            return rows;
+        });
+
+        const tasks = getAndUpdate();
         return tasks;
     });
 
