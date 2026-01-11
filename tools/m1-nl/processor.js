@@ -31,6 +31,7 @@ $cms->landing( 1, 2 ); // Идентификаторы оффера и сайт�
     res = res.replace(phpV('price_val'), '<?=$cms->currency;?>');
     res = res.replace(phpV('price_old_land'), '<?=$cms->oldpr;?>');
     res = res.replace(phpV('percent_land'), '<?=$cms->discount;?>');
+    res = res.replace(phpV('last'), '12');
     
     // Правило 12: Экономия
     res = res.replace(phpV('economy_land'), '<?=$cms->oldpr - $cms->price;?>');
