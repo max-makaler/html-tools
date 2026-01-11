@@ -1,9 +1,10 @@
 {
-  "name": "sort_html_files",
+  "name": "html_tools",
   "version": "1.0.0",
   "description": "",
-  "main": "main.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -14,7 +15,9 @@
     "@fastify/multipart": "^9.3.0",
     "@fastify/static": "^9.0.0",
     "adm-zip": "^0.5.16",
+    "better-sqlite3": "^12.6.0",
     "cheerio": "^1.1.2",
+    "dotenv": "^17.2.3",
     "fastify": "^5.6.2"
   }
 }

@@ -1,21 +1,28 @@
-# 1. Используем легкую версию Node.js на базе Alpine Linux
-FROM node:20-alpine
+# --- ЭТАП 1: Сборка (Build) ---
+FROM node:20-alpine AS builder
 
-# 2. Указываем рабочую директорию внутри контейнера
+# Устанавливаем инструменты сборки
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
-# 3. Копируем только файлы зависимостей
-# Это нужно для кэширования: если зависимости не менялись, Docker не будет их переустанавливать
 COPY package*.json ./
-
-# 4. Устанавливаем библиотеки (только для продакшена)
+# Собираем все зависимости, включая native-модули (better-sqlite3)
 RUN npm install --production
 
-# 5. Копируем все остальные файлы проекта (server.js, public, и т.д.)
+# --- ЭТАП 2: Финальный образ (Production) ---
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Копируем только папку node_modules из первого образа
+COPY --from=builder /app/node_modules ./node_modules
+# Копируем остальные исходники
 COPY . .
 
-# 6. Указываем порт, который будет слушать приложение
+# Создаем папку для базы
+RUN mkdir -p /app/data
+
 EXPOSE 3000
 
-# 7. Запускаем сервер
 CMD ["node", "server.js"]

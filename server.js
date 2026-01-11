@@ -4,12 +4,28 @@ import fastifyStatic from '@fastify/static';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import Database from 'better-sqlite3'; // Импортируем базу
+import 'dotenv/config'; // Автоматически подгружает .env
+
 // Импорт логики инструментов
 import { sorting } from './tools/zip-tool/main.js';
 import { transformCode } from './tools/m1-nl/processor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
+// Создаем файл базы в папке data (удобно для Docker volumes)
+const db = new Database(path.join(__dirname, 'jira_queue.db'));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jira_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_key TEXT,
+    comment TEXT,
+    status TEXT DEFAULT 'new',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
 const fastify = Fastify({ 
     logger: true,
@@ -20,6 +36,10 @@ const fastify = Fastify({
 fastify.register(multipart, {
     limits: { fileSize: 52428800 }
 });
+
+
+
+
 
 // --- TOOL 1: ZIP-TOOL (Сортировка архивов) ---
 fastify.register(async function (instance) {
@@ -46,6 +66,9 @@ fastify.register(async function (instance) {
         }
     });
 }, { prefix: '/zip-tool' });
+
+
+
 
 
 // --- TOOL 2: M1-NL (PHP Реплейсер) ---
@@ -79,9 +102,60 @@ fastify.register(async function (instance) {
 }, { prefix: '/m1-nl' });
 
 
+
+
+
+// --- TOOL 3: JIRA BRIDGE (Очередь для VPN) ---
+fastify.register(async function (instance) {
+    
+    // 1. Прием данных из Google Sheets
+    instance.post('/update', async (request, reply) => {
+        const { key, message, token } = request.body;
+
+        // Проверка токена из .env
+        if (!token || token !== process.env.JIRA_BRIDGE_TOKEN) {
+            return reply.code(401).send({ error: 'Unauthorized' });
+        }
+
+        if (!key || !message) {
+            return reply.code(400).send({ error: 'Missing key or message' });
+        }
+
+        const stmt = db.prepare('INSERT INTO jira_queue (issue_key, comment) VALUES (?, ?)');
+        stmt.run(key, message);
+
+        return { success: true, message: 'Added to queue' };
+    });
+
+    // 2. Раздача данных для скрипта внутри VPN
+    instance.get('/pending', async (request, reply) => {
+        // Проверяем тот же токен (безопасность лишней не бывает)
+        const token = request.query.token;
+        if (!token || token !== process.env.JIRA_BRIDGE_TOKEN) {
+            return reply.code(401).send({ error: 'Unauthorized' });
+        }
+
+        // Берем все новые задачи
+        const tasks = db.prepare("SELECT id, issue_key, comment FROM jira_queue WHERE status = 'new'").all();
+
+        if (tasks.length > 0) {
+            // Помечаем их как отправленные
+            const ids = tasks.map(t => t.id).join(',');
+            db.prepare(`UPDATE jira_queue SET status = 'sent' WHERE id IN (${ids})`).run();
+        }
+
+        return tasks;
+    });
+
+}, { prefix: '/jira-bridge' });
+
+
+
+
 fastify.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
     if (err) throw err;
     console.log('🚀 Hub started!');
     console.log('📦 Zip-Tool: http://localhost:3000/zip-tool/');
     console.log('📝 M1-NL:    http://localhost:3000/m1-nl/');
+    console.log('🔗 Jira Bridge: http://localhost:3000/jira-bridge/');
 });
