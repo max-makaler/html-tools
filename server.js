@@ -112,7 +112,7 @@ fastify.register(async function (instance) {
     instance.post('/update', async (request, reply) => {
         const { key, message, token } = request.body;
 
-        // Проверка токена из .env
+        // 1. Проверка токена
         if (!token || token !== process.env.JIRA_BRIDGE_TOKEN) {
             return reply.code(401).send({ error: 'Unauthorized' });
         }
@@ -121,10 +121,25 @@ fastify.register(async function (instance) {
             return reply.code(400).send({ error: 'Missing key or message' });
         }
 
+        // 2. Проверяем, нет ли уже такой задачи В ОЧЕРЕДИ (status = 'new')
+        const existing = db.prepare(
+            "SELECT id FROM jira_queue WHERE issue_key = ? AND status = 'new'"
+        ).get(key);
+
+        if (existing) {
+            // Если задача уже ждет отправки, просто отвечаем "Ок", не создавая дубль
+            return { 
+                success: true, 
+                info: 'This ID is already in queue and will be processed soon' 
+            };
+        }
+
+        // 3. Если в очереди (new) такой задачи нет — добавляем
+        // (даже если есть такая же со статусом 'sent', она нам не мешает)
         const stmt = db.prepare('INSERT INTO jira_queue (issue_key, comment) VALUES (?, ?)');
         stmt.run(key, message);
 
-        return { success: true, message: 'Added to queue' };
+        return { success: true };
     });
 
     // 2. Раздача данных для скрипта внутри VPN
