@@ -110,34 +110,40 @@ fastify.register(async function (instance) {
     
     // 1. Прием данных из Google Sheets
     instance.post('/update', async (request, reply) => {
-        const { key, message, token } = request.body;
+        let { key, message, token } = request.body;
 
-        // 1. Проверка токена
         if (!token || token !== process.env.JIRA_BRIDGE_TOKEN) {
             return reply.code(401).send({ error: 'Unauthorized' });
         }
 
-        if (!key || !message) {
-            return reply.code(400).send({ error: 'Missing key or message' });
+        // 1. Проверяем, есть ли плюс в конце
+        const isForce = key.endsWith('+');
+        // 2. Очищаем ключ от плюса для записи в БД
+        const cleanKey = isForce ? key.slice(0, -1) : key;
+
+        if (isForce) {
+            // Если есть плюс — записываем в очередь без лишних вопросов
+            const stmt = db.prepare('INSERT INTO jira_queue (issue_key, comment) VALUES (?, ?)');
+            stmt.run(cleanKey, message);
+            return { success: true, info: 'Forced update added' };
         }
 
-        // 2. Проверяем, нет ли уже такой задачи В ОЧЕРЕДИ (status = 'new')
-        const existing = db.prepare(
-            "SELECT id FROM jira_queue WHERE issue_key = ? AND status = 'new'"
-        ).get(key);
+        // 3. Если плюса нет — проверяем, была ли такая задача ВООБЩЕ в базе
+        const existsAtAll = db.prepare(
+            "SELECT id FROM jira_queue WHERE issue_key = ? LIMIT 1"
+        ).get(cleanKey);
 
-        if (existing) {
-            // Если задача уже ждет отправки, просто отвечаем "Ок", не создавая дубль
+        if (existsAtAll) {
+            // Если ID уже встречался (неважно, new или sent), игнорируем без плюса
             return { 
                 success: true, 
-                info: 'This ID is already in queue and will be processed soon' 
+                info: 'Already processed before. Use + to resend.' 
             };
         }
 
-        // 3. Если в очереди (new) такой задачи нет — добавляем
-        // (даже если есть такая же со статусом 'sent', она нам не мешает)
+        // 4. Если задача абсолютно новая — добавляем
         const stmt = db.prepare('INSERT INTO jira_queue (issue_key, comment) VALUES (?, ?)');
-        stmt.run(key, message);
+        stmt.run(cleanKey, message);
 
         return { success: true };
     });
@@ -171,6 +177,7 @@ fastify.register(async function (instance) {
     });
 
 }, { prefix: '/jira-bridge' });
+
 
 
 
