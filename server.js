@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 
 // --- ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ---
 // Создаем файл базы в папке data (удобно для Docker volumes)
-const db = new Database(path.join(__dirname, 'jira_queue.db'));
+const db = new Database(path.join(__dirname, 'data', 'jira_queue.db'));
 db.exec(`
   CREATE TABLE IF NOT EXISTS jira_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
